@@ -1,0 +1,25 @@
+<rail version="0.1">
+
+  <output>
+    <name>generated_output</name>
+    <type>string</type>
+    <description>
+      The assistant's response, including any explanations, code reviews, scenario walkthroughs, or assessments.
+    </description>
+  </output>
+
+  <validators>
+    <contains_profanity mode="reject">
+      <message>Please keep language professional and free of profanity.</message>
+    </contains_profanity>
+
+    <regex pattern="(?i)I (think|believe|guess|might)" mode="warn">
+      <message>Avoid speculative language; please state facts with citations.</message>
+    </regex>
+
+    <regex pattern="(OWASP|NIST|&lt;a href=)" mode="warn">
+      <message>Please include at least one citation to OWASP or NIST when making factual cybersecurity claims.</message>
+    </regex>
+  </validators>
+
+</rail>
