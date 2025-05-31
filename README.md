@@ -11,7 +11,6 @@
 - [⚙️ Architecture & Tech Stack](#-architecture--tech-stack)
 - [🌱 Future Scope](#-future-scope)
 - [👥 Team & Acknowledgements](#-team--acknowledgements)
-- [📄 License](#-license)
 
 ---
 
