@@ -1,4 +1,9 @@
+// src/hooks/useAPI.js
+
 import { useState, useCallback } from 'react';
+
+// Grab the base URL from process.env
+const API_BASE = import.meta.env.VITE_API_BASE_URL;
 
 export const useApi = () => {
   const [loading, setLoading] = useState(false);
@@ -39,21 +44,21 @@ export const useAuth = () => {
   const { fetchData, loading, error } = useApi();
 
   const login = async (credentials) => {
-    return fetchData('http://127.0.0.1:8000/api/auth/login', {
+    return fetchData(`${API_BASE}/api/auth/login`, {
       method: 'POST',
       body: JSON.stringify(credentials),
     });
   };
 
   const signup = async (userData) => {
-    return fetchData('http://127.0.0.1:8000/api/auth/signup', {
+    return fetchData(`${API_BASE}/api/auth/signup`, {
       method: 'POST',
       body: JSON.stringify(userData),
     });
   };
 
   const logout = async () => {
-    return fetchData('http://127.0.0.1:8000/api/auth/logout', {
+    return fetchData(`${API_BASE}/api/auth/logout`, {
       method: 'POST',
     });
   };
@@ -65,14 +70,14 @@ export const useChatbot = () => {
   const { fetchData } = useApi();
 
   const sendMessage = async (userId, prompt) => {
-    return fetchData('http://127.0.0.1:8000/api/chatbot/message', {
+    return fetchData(`${API_BASE}/api/chatbot/message`, {
       method: 'POST',
       body: JSON.stringify({ user_id: userId, prompt }),
     });
   };
 
   const getHistory = async (userId) => {
-    return fetchData(`http://127.0.0.1:8000/api/chatbot/history?user_id=${userId}`);
+    return fetchData(`${API_BASE}/api/chatbot/history?user_id=${userId}`);
   };
 
   return { sendMessage, getHistory };

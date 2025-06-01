@@ -6,7 +6,7 @@ import StudentDashboard from './pages/StudentDashboard';
 import ChatPage from './pages/ChatPage';
 import Signup from './pages/Signup';
 import Login from './pages/Login';
-import LandingPage from './pages/landingpage.jsx';
+import LandingPage from './pages/LandingPage.jsx';
 
 function App() {
   return (

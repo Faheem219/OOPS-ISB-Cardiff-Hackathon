@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
-import { useChatbot } from "../hooks/useAPI";
+import { useChatbot } from "../hooks/useApi";
 import { Bot, Send, Loader2, ArrowLeft } from "lucide-react";
 
 const Chatbot = () => {
@@ -53,15 +53,40 @@ const Chatbot = () => {
         ...prev,
         { sender: "bot", message: response.result, timestamp: new Date() },
       ]);
-      // Increase size after receiving response
       setExpandedSize({ width: 700, height: 700 });
     } catch (err) {
       console.error("Error sending message:", err);
+
+      // 1) Try to grab detail from err.response.data.detail (if it exists)
+      let userErrorMessage = err?.response?.data?.detail;
+
+      // 2) If that failed, see if err.message contains a JSON payload we can parse
+      if (!userErrorMessage && typeof err.message === "string") {
+        const jsonStart = err.message.indexOf("{");
+        if (jsonStart !== -1) {
+          try {
+            const parsed = JSON.parse(err.message.substring(jsonStart));
+            if (parsed.detail) {
+              // Strip leading "400: " or "404: " etc., if present
+              userErrorMessage = parsed.detail.replace(/^\d+:\s*/, "");
+            }
+          } catch {
+            // ignore JSON.parse errors
+          }
+        }
+      }
+
+      // 3) Fallback to err.message itself (no parsing possible)
+      if (!userErrorMessage) {
+        userErrorMessage =
+          err.message || "An error occurred. Please try again.";
+      }
+
       setMessages((prev) => [
         ...prev,
         {
           sender: "bot",
-          message: "Sorry, I encountered an error. Please try again.",
+          message: userErrorMessage,
           timestamp: new Date(),
         },
       ]);
@@ -109,104 +134,164 @@ const Chatbot = () => {
   const expandedWidth = expandedSize.width;
   const expandedHeight = expandedSize.height;
 
-  // Format bot messages with markdown-style formatting
   const formatBotMessage = (text) => {
     if (!text) return null;
 
-    // Split by lines and process each line
-    return text.split("\n").map((line, idx) => {
-      if (!line.trim()) return <br key={idx} />;
+    const lines = text.split("\n");
+    const elements = [];
+    let i = 0;
 
-      // Check for bullet points
+    while (i < lines.length) {
+      const line = lines[i];
+
+      // Handle code blocks (```)
+      if (line.trim().startsWith("```")) {
+        const language = line.trim().substring(3).trim() || "text";
+        const codeLines = [];
+        i++; // Move to next line after opening ```
+
+        // Collect code lines until closing ```
+        while (i < lines.length && !lines[i].trim().startsWith("```")) {
+          codeLines.push(lines[i]);
+          i++;
+        }
+
+        // Add the code block element
+        elements.push(
+          <div key={elements.length} className="code-block-container mb-4">
+            <div className="bg-gray-100 rounded-t-md px-3 py-2 text-sm text-gray-600 border-b">
+              {language}
+            </div>
+            <pre className="bg-gray-900 text-green-400 p-4 rounded-b-md overflow-x-auto">
+              <code>{codeLines.join("\n")}</code>
+            </pre>
+          </div>
+        );
+        i++; // Skip the closing ```
+        continue;
+      }
+
+      // Handle empty lines
+      if (!line.trim()) {
+        elements.push(<br key={elements.length} />);
+        i++;
+        continue;
+      }
+
+      // Handle headers (### text)
+      if (line.startsWith("###")) {
+        elements.push(
+          <h3 key={elements.length} className="text-lg font-semibold mb-2 mt-4">
+            {formatInlineText(line.substring(3).trim())}
+          </h3>
+        );
+        i++;
+        continue;
+      }
+
+      // Handle headers (## text)
+      if (line.startsWith("##")) {
+        elements.push(
+          <h2 key={elements.length} className="text-xl font-semibold mb-2 mt-4">
+            {formatInlineText(line.substring(2).trim())}
+          </h2>
+        );
+        i++;
+        continue;
+      }
+
+      // Handle bullet points
       if (
         line.startsWith("- ") ||
         line.startsWith("* ") ||
         line.startsWith("• ")
       ) {
-        return (
-          <div key={idx} className="flex items-start mb-1">
+        elements.push(
+          <div key={elements.length} className="flex items-start mb-1">
             <span className="mr-2 mt-1">•</span>
             <span>{formatInlineText(line.substring(2))}</span>
           </div>
         );
+        i++;
+        continue;
       }
 
-      // Check for numbered lists
+      // Handle numbered lists
       const numberedMatch = line.match(/^(\d+)\.\s+(.*)/);
       if (numberedMatch) {
-        return (
-          <div key={idx} className="flex items-start mb-1">
+        elements.push(
+          <div key={elements.length} className="flex items-start mb-1">
             <span className="mr-2 mt-1">{numberedMatch[1]}.</span>
             <span>{formatInlineText(numberedMatch[2])}</span>
           </div>
         );
+        i++;
+        continue;
       }
 
       // Regular paragraph
-      return (
-        <div key={idx} className="mb-1">
+      elements.push(
+        <div key={elements.length} className="mb-1">
           {formatInlineText(line)}
         </div>
       );
-    });
+      i++;
+    }
+
+    return elements;
   };
 
-  // Format inline text with bold and italic
+  // Enhanced formatInlineText function with inline code, bold, and italic support
   const formatInlineText = (text) => {
+    if (!text) return text;
+
     const segments = [];
     let currentIndex = 0;
-    let boldRegex = /\*\*(.*?)\*\*/g;
-    let italicRegex = /\*(.*?)\*/g;
+
+    // Combined regex to match inline code, bold, and italic in order of precedence
+    const combinedRegex = /(`[^`]+`)|(\*\*[^*]+\*\*)|(\*[^*]+\*)/g;
     let match;
 
-    // Process bold text
-    while ((match = boldRegex.exec(text)) !== null) {
+    while ((match = combinedRegex.exec(text)) !== null) {
       // Add text before the match
       if (match.index > currentIndex) {
         segments.push(text.substring(currentIndex, match.index));
       }
 
-      // Add bold text
-      segments.push(<strong key={`b-${match.index}`}>{match[1]}</strong>);
+      if (match[1]) {
+        // Inline code (backticks)
+        const codeContent = match[1].substring(1, match[1].length - 1);
+        segments.push(
+          <code
+            key={`code-${match.index}`}
+            className="bg-gray-100 px-1 py-0.5 rounded text-sm font-mono"
+          >
+            {codeContent}
+          </code>
+        );
+      } else if (match[2]) {
+        // Bold text (**)
+        const boldContent = match[2].substring(2, match[2].length - 2);
+        segments.push(
+          <strong key={`bold-${match.index}`}>{boldContent}</strong>
+        );
+      } else if (match[3]) {
+        // Italic text (*)
+        const italicContent = match[3].substring(1, match[3].length - 1);
+        segments.push(<em key={`italic-${match.index}`}>{italicContent}</em>);
+      }
+
       currentIndex = match.index + match[0].length;
     }
 
-    // Add remaining text
+    // Add remaining text after last match
     if (currentIndex < text.length) {
       segments.push(text.substring(currentIndex));
     }
 
-    // Process italic in segments
-    return segments.map((segment, idx) => {
-      if (typeof segment === "string") {
-        const italicSegments = [];
-        let italicIndex = 0;
-        let italicMatch;
-
-        while ((italicMatch = italicRegex.exec(segment)) !== null) {
-          // Add text before the match
-          if (italicMatch.index > italicIndex) {
-            italicSegments.push(
-              segment.substring(italicIndex, italicMatch.index)
-            );
-          }
-
-          // Add italic text
-          italicSegments.push(
-            <em key={`i-${idx}-${italicMatch.index}`}>{italicMatch[1]}</em>
-          );
-          italicIndex = italicMatch.index + italicMatch[0].length;
-        }
-
-        // Add remaining text
-        if (italicIndex < segment.length) {
-          italicSegments.push(segment.substring(italicIndex));
-        }
-
-        return <span key={`s-${idx}`}>{italicSegments}</span>;
-      }
-      return segment;
-    });
+    // **The only change**: return segments whenever there’s at least one match,
+    // not only when there are 2 or more parts.
+    return segments.length ? segments : text;
   };
 
   return (
@@ -631,6 +716,7 @@ const Chatbot = () => {
                       </button>
                       <button
                         type="button"
+                        style={{ maxHeight: "40px" }}
                         onClick={async (e) => {
                           e.stopPropagation();
                           // 1) Ask for confirmation first

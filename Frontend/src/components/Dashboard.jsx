@@ -2,7 +2,7 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { Sun, Moon, Wifi, WifiOff, LogOut } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useApi } from '../hooks/useAPI';
+import { useApi } from '../hooks/useApi';
 
 const Dashboard = ({ children }) => {
   const { user, logout } = useAuth();
@@ -12,15 +12,6 @@ const Dashboard = ({ children }) => {
 
   const handleLogout = async () => {
     try {
-      // Update sustainable usage metrics on backend before logging out
-      await fetchData('http://127.0.0.1:8000/api/sustainable/update', {
-        method: 'POST',
-        body: JSON.stringify({
-          user_id: user.id,
-          dark_mode_hours: darkModeHours,
-          low_bandwidth_hours: lowBandwidthHours,
-        }),
-      });
       await logout();
       navigate('/login');
     } catch (error) {
@@ -55,7 +46,7 @@ const Dashboard = ({ children }) => {
               </button>
               <div className="flex items-center space-x-2">
                 <span className="text-gray-700 dark:text-gray-300">
-                  {user?.username || 'User'} ({user?.role})
+                  {user?.username || 'User'}
                 </span>
                 <button
                   onClick={handleLogout}

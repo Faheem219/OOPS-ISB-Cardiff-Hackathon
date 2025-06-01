@@ -26,4 +26,4 @@ app.include_router(chatbot.router)
 app.include_router(sustainable.router)
 
 if __name__ == "__main__":
-    uvicorn.run(app, port=8000)
+    uvicorn.run("main:app", port=8000, reload=True)

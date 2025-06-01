@@ -31,7 +31,8 @@ async def send_message(payload: ChatRequest, db=Depends(get_db)):
     try:
         answer = process_prompt(db, payload.user_id, payload.prompt)
     except Exception as e:
-        raise HTTPException(500, str(e))
+        status = getattr(e, "status_code", 500)
+        raise HTTPException(status_code = status, detail=str(e))
 
     return {"result": answer}
 

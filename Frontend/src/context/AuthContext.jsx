@@ -1,5 +1,10 @@
+// src/contexts/AuthContext.jsx
+
 import { createContext, useContext, useState } from 'react';
-import { useApi } from '../hooks/useAPI';
+import { useApi } from '../hooks/useApi';
+
+// Grab the base URL from process.env
+const API_BASE = import.meta.env.VITE_API_BASE_URL;
 
 const AuthContext = createContext(null);
 
@@ -9,7 +14,7 @@ export const AuthProvider = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   const login = async (credentials) => {
-    const data = await fetchData('http://127.0.0.1:8000/api/auth/login', {
+    const data = await fetchData(`${API_BASE}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(credentials),
@@ -20,7 +25,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const signup = async (userData) => {
-    const data = await fetchData('http://127.0.0.1:8000/api/auth/signup', {
+    const data = await fetchData(`${API_BASE}/api/auth/signup`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(userData),
@@ -31,7 +36,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = async () => {
-    await fetchData('http://127.0.0.1:8000/api/auth/logout', {
+    await fetchData(`${API_BASE}/api/auth/logout`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     });
@@ -40,7 +45,9 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated, login, signup, logout, loading, error }}>
+    <AuthContext.Provider
+      value={{ user, isAuthenticated, login, signup, logout, loading, error }}
+    >
       {children}
     </AuthContext.Provider>
   );
