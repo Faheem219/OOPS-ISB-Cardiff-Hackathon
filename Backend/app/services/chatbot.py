@@ -95,13 +95,7 @@ def build_retrieval_chain():
             api_key=GEMINI_API_KEY,
             max_tokens=600,
             temperature=0.1
-        ),
-        chain_type="stuff",
-        retriever=store.as_retriever(
-            search_type="mmr",
-            search_kwargs={"k": 6, "lambda_mult": 0.25}
-        ),
-        return_source_documents=False
+        )
     )
     print("[build_retrieval_chain] Chain ready")
 
