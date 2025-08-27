@@ -3,17 +3,19 @@
 import os
 import glob
 import torch
+import pickle
+import hashlib
 from typing import Optional, List
 from datetime import datetime
 from bson import ObjectId
 from langchain.chains import RetrievalQA
 from langchain.embeddings import HuggingFaceEmbeddings
 from langchain.vectorstores import Chroma
-from langchain.llms.base import LLM
+from langchain_openai import ChatOpenAI
+from langchain.docstore.document import Document
 from dotenv import load_dotenv
 from pydantic import Field
 from guardrails import Guard
-from google import genai
 import json
 from fastapi import HTTPException
 from pathlib import Path
@@ -22,7 +24,7 @@ from .validators import sanitize_prompt
 
 # load .env
 load_dotenv()
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 DEVICE = "cuda:0" if torch.cuda.is_available() else "cpu"
 
@@ -35,7 +37,7 @@ SYSTEM_PROMPT = (
     "  • Assessing learner answers against OWASP Top 10\n"
     "  • Explaining rationale with references to standards\n"
     "Always cite OWASP, NIST, or other authoritative sources. "
-    "Never hallucinate or expose internal details."
+    "Never hallucinate or expose internal details. "
     "You must always give references, and only of authoritative sources like OWASP, NIST, or similar. "
 )
 
@@ -43,30 +45,71 @@ SYSTEM_PROMPT = (
 conversation_retrieval_chain = None
 embeddings = None
 guard = None
-CYBER_DOCS_PATH = os.getenv("CYBER_DOCS_PATH", "Backend/data_cyber_docs")
 
-def init_llm():
-    global embeddings, guard
-    print("[init_llm] Initializing embeddings and guardrails")
-    os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
+cwd = Path.cwd()
 
-    embeddings = HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2",
-        model_kwargs={"device": DEVICE}
+if (cwd / "Backend").is_dir():
+    # Local machine: prepend "Backend/"
+    CYBER_DOCS_PATH = cwd / "Backend" / "data_cyber_docs"
+    CACHE_DIR = cwd / "Backend" / "cache"
+else:
+    # Deployed (e.g. on Render): assume path is directly relative to cwd
+    CYBER_DOCS_PATH = cwd / "data_cyber_docs"
+    CACHE_DIR = cwd / "cache"
+
+# Create cache directory if it doesn't exist
+CACHE_DIR.mkdir(exist_ok=True)
+VECTOR_STORE_CACHE_PATH = CACHE_DIR / "vector_store"
+DOCS_HASH_FILE = CACHE_DIR / "docs_hash.txt"
+
+def compute_docs_hash() -> str:
+    """Compute hash of all cyber docs to detect changes"""
+    hash_obj = hashlib.md5()
+    
+    # Get all doc files
+    patterns = (
+        glob.glob(os.path.join(CYBER_DOCS_PATH, "**", "*.md"), recursive=True) +
+        glob.glob(os.path.join(CYBER_DOCS_PATH, "**", "*.txt"), recursive=True)
     )
+    
+    # Sort to ensure consistent hashing
+    patterns.sort()
+    
+    for path in patterns:
+        # Include file path and modification time in hash
+        stat = os.stat(path)
+        hash_obj.update(f"{path}:{stat.st_mtime}".encode('utf-8'))
+        
+        # Also include file content hash
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(4096), b""):
+                hash_obj.update(chunk)
+    
+    return hash_obj.hexdigest()
 
-    print(f"[init_llm] Loading Guardrails spec")
-    cwd = Path.cwd()
-    if (cwd / "Backend").is_dir():
-        # Local machine: prepend “Backend/”
-        rail_path = cwd / "Backend" / "rails" / "security_education_guardrails.rail"
-    else:
-        # Deployed (e.g. on Render): no “Backend/” prefix
-        rail_path = cwd / "rails" / "security_education_guardrails.rail"
-    guard = Guard.from_rail(rail_path)
+def is_cache_valid() -> bool:
+    """Check if cached vector store is still valid"""
+    if not VECTOR_STORE_CACHE_PATH.exists():
+        return False
+    
+    if not DOCS_HASH_FILE.exists():
+        return False
+    
+    try:
+        with open(DOCS_HASH_FILE, 'r') as f:
+            cached_hash = f.read().strip()
+        
+        current_hash = compute_docs_hash()
+        return cached_hash == current_hash
+    except Exception as e:
+        print(f"[is_cache_valid] Error checking cache: {e}")
+        return False
 
-    os.environ.pop("GEMINI_API_KEY", None)
-    print("[init_llm] Done")
+def save_docs_hash():
+    """Save current docs hash to cache"""
+    current_hash = compute_docs_hash()
+    with open(DOCS_HASH_FILE, 'w') as f:
+        f.write(current_hash)
 
 init_llm()
 
@@ -82,22 +125,45 @@ def load_cyber_corpus() -> List[str]:
             corpus.append(f.read())
     return corpus
 
-def build_retrieval_chain():
-    global conversation_retrieval_chain
-
-    from langchain.docstore.document import Document
-    docs = [Document(page_content=d) for d in load_cyber_corpus()]
-
-    store = Chroma.from_documents(docs, embedding=embeddings)
-    conversation_retrieval_chain = RetrievalQA.from_chain_type(
-        llm=GeminiLLM(
-            model_name="gemini-2.5-flash-preview-05-20",
-            api_key=GEMINI_API_KEY,
-            max_tokens=600,
-            temperature=0.1
+def load_cached_vector_store():
+    """Load vector store from cache if available"""
+    try:
+        store = Chroma(
+            persist_directory=str(VECTOR_STORE_CACHE_PATH),
+            embedding_function=embeddings
         )
+        print("[load_cached_vector_store] Successfully loaded cached vector store")
+        return store
+    except Exception as e:
+        print(f"[load_cached_vector_store] Error loading cache: {e}")
+        return None
+
+def save_vector_store_cache(store):
+    """Save vector store to cache"""
+    try:
+        # Chroma automatically persists when persist_directory is set
+        save_docs_hash()
+        print("[save_vector_store_cache] Successfully saved vector store to cache")
+    except Exception as e:
+        print(f"[save_vector_store_cache] Error saving cache: {e}")
+
+def build_fresh_vector_store():
+    """Build a new vector store from documents"""
+    print("[build_fresh_vector_store] Creating new vector store...")
+    
+    docs = [Document(page_content=d) for d in load_cyber_corpus()]
+    
+    # Create new vector store with persistence
+    store = Chroma.from_documents(
+        docs, 
+        embedding=embeddings,
+        persist_directory=str(VECTOR_STORE_CACHE_PATH)
     )
-    print("[build_retrieval_chain] Chain ready")
+    
+    # Save the hash for future cache validation
+    save_vector_store_cache(store)
+    
+    return store
 
 def process_prompt(db, user_id: str, prompt: str) -> str:
     """
@@ -113,7 +179,7 @@ def process_prompt(db, user_id: str, prompt: str) -> str:
     guard_pre = guard.parse(json.dumps({"generated_output": prompt}))
     print(f"[process_prompt] guard_pre.validation_passed={guard_pre.validation_passed}")
     if not guard_pre.validation_passed:
-        # if our simple “generated_output” field doesn’t pass (e.g. profanity),
+        # if our simple "generated_output" field doesn't pass (e.g. profanity),
         # we can reject or modify before continuing.
         raise HTTPException(status_code=400, detail="Prompt failed guardrails pre-check.")
 
