@@ -16,7 +16,7 @@
 
 ## 🚀 Introduction
 
-**Cyber-Learn** is an interactive cybersecurity tutor powered by **LLMs** (Gemini), **LangChain**, and **Guardrails AI**, designed for the ISBM Cardiff Hackathon 🏆. The platform guides learners through:
+**Cyber-Learn** is an interactive cybersecurity tutor powered by **LLMs** (OpenAI), **LangChain**, and **Guardrails AI**, designed for the ISBM Cardiff Hackathon 🏆. The platform guides learners through:
 
 - Secure coding practices (📜 OWASP / 🔒 NIST)
 - Real-world cyber attack simulations (🚨 phishing, 🧬 SQLi, 🛑 XSS)
@@ -61,7 +61,7 @@ CLEAR_HISTORY
 ```
 Frontend      🧩 React + Tailwind
 Backend       🐍 FastAPI
-LLM           🧠 Gemini API (gemini-2.5-flash-preview)
+LLM           🧠 OpenAI API (gpt-4.1-mini)
 Embeddings    🧬 HuggingFace MiniLM
 RAG           🧠 LangChain + Chroma Vector DB
 Security      🛡️ Guardrails AI + Input Sanitizers
